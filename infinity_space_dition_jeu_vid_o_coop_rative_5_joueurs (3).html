@@ -1,0 +1,1964 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INFINITY SPACE — Édition Jeu Vidéo Coopérative 5 Joueurs</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@600;700;800;900&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --hud-cyan: #38bdf8;
+      --hud-emerald: #10b981;
+      --hud-amber: #f59e0b;
+      --hud-rose: #f43f5e;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #030712;
+      color: #f8fafc;
+      overflow-x: hidden;
+      user-select: none;
+    }
+
+    .font-display { font-family: 'Orbitron', sans-serif; }
+    .font-mono { font-family: 'JetBrains Mono', monospace; }
+
+    /* Fond spatial animé */
+    #space-bg-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    /* Effet scanlines subtil façon cockpit */
+    .cockpit-scanlines {
+      position: fixed;
+      inset: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.22) 50%);
+      background-size: 100% 4px;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0.45;
+    }
+
+    /* Panneaux Sci-Fi biseautés */
+    .hud-panel {
+      background: linear-gradient(160deg, rgba(13, 21, 38, 0.88) 0%, rgba(7, 12, 24, 0.94) 100%);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      box-shadow: 0 0 28px rgba(2, 132, 199, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      clip-path: polygon(
+        14px 0%, calc(100% - 14px) 0%,
+        100% 14px, 100% calc(100% - 14px),
+        calc(100% - 14px) 100%, 14px 100%,
+        0% calc(100% - 14px), 0% 14px
+      );
+    }
+
+    .hud-subpanel {
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      border-radius: 12px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    /* Boutons gaming tactiles */
+    .game-btn {
+      position: relative;
+      transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.15s ease, filter 0.15s ease;
+      cursor: pointer;
+    }
+    .game-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      filter: brightness(1.08);
+    }
+    .game-btn:active:not(:disabled) {
+      transform: translateY(1px) scale(0.98);
+    }
+    .game-btn:disabled {
+      cursor: not-allowed;
+      opacity: 0.55;
+    }
+
+    /* Barres de jauge segmentées */
+    .gauge-track {
+      background: rgba(2, 6, 23, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.8);
+    }
+
+    /* Animation secousse en cas d'erreur / alerte */
+    @keyframes screenShake {
+      0%, 100% { transform: translate(0, 0); }
+      20% { transform: translate(-6px, 3px); }
+      40% { transform: translate(6px, -3px); }
+      60% { transform: translate(-4px, -2px); }
+      80% { transform: translate(4px, 2px); }
+    }
+    .shake-fx {
+      animation: screenShake 0.4s ease-in-out;
+    }
+
+    /* Animation flash de validation */
+    @keyframes pulseGlow {
+      0%, 100% { box-shadow: 0 0 14px rgba(56, 189, 248, 0.25); }
+      50% { box-shadow: 0 0 28px rgba(56, 189, 248, 0.6); }
+    }
+    .glow-active {
+      animation: pulseGlow 2.2s infinite ease-in-out;
+    }
+
+    /* Bannière cinématique de passage de jour */
+    @keyframes bannerSlide {
+      0% { opacity: 0; transform: translateY(-24px) scale(0.95); }
+      15% { opacity: 1; transform: translateY(0) scale(1); }
+      85% { opacity: 1; transform: translateY(0) scale(1); }
+      100% { opacity: 0; transform: translateY(-16px) scale(0.98); }
+    }
+    .cinematic-banner {
+      animation: bannerSlide 2.6s forwards ease-out;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between relative">
+
+  <!-- Fond spatial étoilé + planètes animées -->
+  <canvas id="space-bg-canvas"></canvas>
+  <div class="cockpit-scanlines"></div>
+
+  <!-- Bannière cinématique flottante -->
+  <div id="cinematic-toast" class="hidden fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+    <div class="hud-panel px-7 py-3.5 border-2 border-sky-400/70 text-center">
+      <div id="cinematic-sub" class="text-[10px] font-mono tracking-[0.25em] text-sky-300 uppercase">SYSTÈMES SYNCHRONISÉS</div>
+      <div id="cinematic-title" class="font-display text-lg sm:text-2xl font-black text-white tracking-wider mt-0.5">JOUR LUNAIRE 2</div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- ÉCRAN DE DÉMARRAGE / SALON MULTIJOUEUR (LOBBY)            -->
+  <!-- ========================================================= -->
+  <div id="lobby-modal" class="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md overflow-y-auto">
+    <div class="hud-panel w-full max-w-4xl p-5 sm:p-7 space-y-5 my-auto border-sky-400/40">
+      
+      <!-- En-tête Lobby Jeu Vidéo -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-sky-500/20 pb-4">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center text-2xl shadow-lg shadow-sky-500/30 border border-white/20">
+            🚀
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] font-mono tracking-[0.2em] uppercase text-sky-400 font-bold">CO-OP EDITION • 5 JOUEURS</span>
+              <span id="lobby-net-status" class="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/30 text-amber-300">
+                ⏳ Connexion...
+              </span>
+            </div>
+            <h1 class="font-display text-2xl sm:text-3xl font-black tracking-wider text-white">
+              INFINITY <span class="text-sky-400">SPACE</span>
+            </h1>
+          </div>
+        </div>
+
+        <button type="button" onclick="toggleAudio()" id="btn-sound-lobby"
+          class="game-btn self-start sm:self-center px-3.5 py-2 rounded-xl hud-subpanel text-xs font-mono text-sky-300 flex items-center gap-2">
+          <span id="sound-icon-lobby">🔊</span> Audio SFX : ON
+        </button>
+      </div>
+
+      <!-- Sélecteur de Mode de Jeu (Solo vs Coop) -->
+      <div>
+        <label class="block text-[11px] font-mono uppercase tracking-wider text-sky-300 mb-2">0. Choisissez le Mode de Jeu</label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button type="button" id="mode-btn-solo" onclick="selectGameMode('solo')"
+            class="game-btn p-3.5 rounded-xl border-2 border-emerald-400 bg-emerald-500/15 text-left flex items-center gap-3">
+            <span class="text-2xl">🎮</span>
+            <div>
+              <div class="font-display text-sm font-bold text-white">MODE SOLO (1 Joueur + 4 IA)</div>
+              <div class="text-[11px] text-slate-300">Démarrez immédiatement avec 4 coéquipiers IA</div>
+            </div>
+          </button>
+
+          <button type="button" id="mode-btn-coop" onclick="selectGameMode('coop')"
+            class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left flex items-center gap-3">
+            <span class="text-2xl">🚀</span>
+            <div>
+              <div class="font-display text-sm font-bold text-white">MODE COOP (5 Joueurs en Ligne)</div>
+              <div class="text-[11px] text-slate-400">Partagez le lien d'escouade à vos 4 amis</div>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <!-- Identité & Code Salon -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div class="hud-subpanel p-3.5">
+          <label class="block text-[11px] font-mono uppercase tracking-wider text-sky-300 mb-1.5">1. Votre Indicatif Pilote</label>
+          <input id="lobby-player-name" type="text" maxlength="16" value="Astronaute"
+            class="w-full px-3.5 py-2.5 rounded-lg bg-slate-950/90 border border-slate-700 text-white font-semibold text-sm focus:outline-none focus:border-sky-400" />
+        </div>
+
+        <div id="coop-room-box" class="hud-subpanel p-3.5">
+          <label class="block text-[11px] font-mono uppercase tracking-wider text-sky-300 mb-1.5">2. Code Escouade (Partageable)</label>
+          <div class="flex gap-2">
+            <input id="lobby-room-code" type="text" maxlength="18" value="ARTEMIS-5"
+              class="flex-1 px-3.5 py-2.5 rounded-lg bg-slate-950/90 border border-slate-700 text-amber-300 font-mono font-bold text-sm uppercase focus:outline-none focus:border-sky-400" />
+            <button type="button" onclick="copyShareLink()"
+              class="game-btn px-4 py-2.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-display font-bold text-xs uppercase tracking-wider">
+              🔗 Copier Lien
+            </button>
+          </div>
+          <p id="share-toast" class="hidden text-[11px] text-emerald-400 font-mono mt-1.5">✔ Lien d'invitation copié ! Partagez-le aux 4 membres.</p>
+        </div>
+      </div>
+
+      <!-- Sélection des 5 Postes Exclusifs -->
+      <div>
+        <div class="flex items-center justify-between mb-2.5">
+          <span class="text-xs font-mono uppercase tracking-wider text-slate-300">3. Choisissez votre poste unique (1 par membre)</span>
+          <span id="lobby-slots-count" class="text-xs font-mono font-bold px-2.5 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-400/30">
+            0 / 5 postes réservés
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          <!-- Poste 1 : Énergie -->
+          <button type="button" id="role-card-energy" onclick="pickRole('energy')"
+            class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-mono text-amber-400 font-bold">⚡ ÉNERGIE</span>
+              <span id="role-owner-energy" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">Libre</span>
+            </div>
+            <div class="font-display text-sm font-bold text-white">Ingénieur Réacteur</div>
+            <p class="text-[11px] text-slate-400 mt-1">Addition de cellules solaires</p>
+          </button>
+
+          <!-- Poste 2 : Bouclier -->
+          <button type="button" id="role-card-shield" onclick="pickRole('shield')"
+            class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-mono text-rose-400 font-bold">🛡️ BOUCLIER</span>
+              <span id="role-owner-shield" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">Libre</span>
+            </div>
+            <div class="font-display text-sm font-bold text-white">Officier Défense</div>
+            <p class="text-[11px] text-slate-400 mt-1">Suite logique de fréquence</p>
+          </button>
+
+          <!-- Poste 3 : Biosphère -->
+          <button type="button" id="role-card-life" onclick="pickRole('life')"
+            class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-mono text-emerald-400 font-bold">🌱 BIOSPHÈRE</span>
+              <span id="role-owner-life" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">Libre</span>
+            </div>
+            <div class="font-display text-sm font-bold text-white">Botaniste O₂</div>
+            <p class="text-[11px] text-slate-400 mt-1">Dosage eau & lumière serre</p>
+          </button>
+
+          <!-- Poste 4 : Télémétrie -->
+          <button type="button" id="role-card-comms" onclick="pickRole('comms')"
+            class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-mono text-sky-400 font-bold">📡 TÉLÉMÉTRIE</span>
+              <span id="role-owner-comms" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">Libre</span>
+            </div>
+            <div class="font-display text-sm font-bold text-white">Officier Radio</div>
+            <p class="text-[11px] text-slate-400 mt-1">Interrupteurs 8 - 4 - 2 - 1</p>
+          </button>
+
+          <!-- Poste 5 : Navigation -->
+          <button type="button" id="role-card-nav" onclick="pickRole('nav')"
+            class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left sm:col-span-2 lg:col-span-2">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-xs font-mono text-purple-400 font-bold">🧭 NAVIGATION</span>
+              <span id="role-owner-nav" class="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">Libre</span>
+            </div>
+            <div class="font-display text-sm font-bold text-white">Pilote Orbital</div>
+            <p class="text-[11px] text-slate-400 mt-1">Calcul rapide de poussée (F = m × a)</p>
+          </button>
+        </div>
+
+        <p id="lobby-role-error" class="hidden text-xs font-mono text-rose-400 mt-2 bg-rose-500/10 border border-rose-500/30 rounded-lg px-3 py-2"></p>
+
+        <!-- Récapitulatif en direct de l'équipage et des tâches attribuées -->
+        <div id="lobby-roster-box" class="mt-3 hud-subpanel p-3.5 border-sky-500/30">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-mono uppercase tracking-wider text-sky-300 font-bold">👥 Équipage & Tâches attribuées</span>
+            <span id="lobby-sync-mode" class="text-[10px] font-mono text-emerald-400">Sync Temps Réel</span>
+          </div>
+          <div id="lobby-roster-list" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+            <!-- Rempli dynamiquement par updateLobbyUI() -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Statut du Commandant & Option IA -->
+      <div id="coop-commander-row" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div id="commander-status-banner" class="hud-subpanel p-3.5 border-sky-400/30 flex items-center justify-between gap-2">
+          <div>
+            <div class="text-[10px] font-mono uppercase text-slate-400">AUTORITÉ DE LANCEMENT</div>
+            <div id="commander-label" class="text-xs font-mono text-sky-300 font-bold mt-0.5">👑 Recherche du Commandant...</div>
+          </div>
+          <span id="commander-badge" class="px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 font-mono text-[10px] font-bold">SYNC</span>
+        </div>
+
+        <label id="commander-ai-box" class="hud-subpanel p-3.5 flex items-center justify-between gap-3 cursor-pointer">
+          <div>
+            <div class="text-xs font-bold text-white">Compléter avec coéquipiers IA</div>
+            <div class="text-[11px] text-slate-400">Permet au Commandant de lancer à &lt; 5 joueurs</div>
+          </div>
+          <input id="lobby-ai-fill" type="checkbox" onchange="updateLobbyUI()" class="w-5 h-5 accent-sky-400 rounded cursor-pointer" />
+        </label>
+      </div>
+
+      <!-- Règle coopérative + Bouton Lancer -->
+      <div class="space-y-2.5">
+        <div class="text-[11px] font-mono text-amber-300/90 bg-amber-500/10 border border-amber-400/25 rounded-lg px-3 py-2 flex items-center gap-2">
+          <span>⚠️</span>
+          <span><strong>Règle Haute Tension :</strong> Chaque joueur dispose de <strong>3 tentatives</strong> par Sol. À 0 tentative ou à la fin du chrono, toute l'équipe échoue !</span>
+        </div>
+
+        <button type="button" id="btn-launch-mission" onclick="launchMission()"
+          class="game-btn w-full py-4 rounded-xl bg-gradient-to-r from-sky-500 via-cyan-400 to-emerald-400 text-slate-950 font-display font-black text-sm sm:text-base tracking-wider uppercase shadow-lg shadow-sky-500/25">
+          🚀 Lancer la Mission Lunaire
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- HUD SUPÉRIEUR DE JEU (COCKPIT BAR)                        -->
+  <!-- ========================================================= -->
+  <header class="relative z-20 px-3 sm:px-6 pt-3">
+    <div class="max-w-7xl mx-auto hud-panel px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- Logo & Escouade -->
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-sky-500/20 border border-sky-400/40 flex items-center justify-center text-lg">
+          🛰️
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="font-display font-black text-sm sm:text-base tracking-wider text-white">INFINITY SPACE</span>
+            <span id="badge-room" class="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-[11px] font-bold">ARTEMIS-5</span>
+          </div>
+          <div class="text-[11px] font-mono text-slate-400">
+            Commandant : <span id="hud-commander-name" class="text-sky-300 font-bold">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Compteurs centraux : Jour Lunaire + Minuteur + Progression Équipe -->
+      <div class="flex items-center gap-2.5 sm:gap-4">
+        <div class="hud-subpanel px-3 py-1.5 text-center">
+          <div class="text-[9px] font-mono uppercase text-slate-400">SOL LUNAIRE</div>
+          <div class="font-display text-sm sm:text-base font-black text-white">
+            <span id="hud-sol" class="text-sky-400">1</span> / <span id="hud-max-sol">5</span>
+          </div>
+        </div>
+
+        <div id="timer-box" class="hud-subpanel px-3.5 py-1.5 text-center border-sky-400/40">
+          <div class="text-[9px] font-mono uppercase text-slate-400">CHRONO</div>
+          <div id="hud-timer" class="font-display text-base sm:text-lg font-black text-emerald-400">01:00</div>
+        </div>
+
+        <div class="hud-subpanel px-3 py-1.5 text-center">
+          <div class="text-[9px] font-mono uppercase text-slate-400">ESCOUADE</div>
+          <div class="font-display text-sm sm:text-base font-black text-amber-300">
+            <span id="hud-ready-count">0</span> / 5
+          </div>
+        </div>
+      </div>
+
+      <!-- Score & Audio -->
+      <div class="flex items-center gap-2.5">
+        <div class="hud-subpanel px-3.5 py-1.5 text-right">
+          <div class="text-[9px] font-mono uppercase text-slate-400">SCORE LIVE</div>
+          <div id="hud-score" class="font-display text-sm sm:text-base font-black text-emerald-400">1 500</div>
+        </div>
+        <button type="button" onclick="toggleAudio()" title="Activer/Couper le son"
+          class="game-btn w-10 h-10 rounded-xl hud-subpanel flex items-center justify-center text-base">
+          <span id="sound-icon-hud">🔊</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ========================================================= -->
+  <!-- ZONE PRINCIPALE DU COCKPIT (3 COLONNES GAMING)            -->
+  <!-- ========================================================= -->
+  <main id="game-main-grid" class="relative z-20 flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+    <!-- COLONNE GAUCHE (3 cols) : TÉLÉMÉTRIE VAISSEAU + RADAR ÉQUIPAGE -->
+    <section class="lg:col-span-3 space-y-4">
+      
+      <!-- Jauges Intégrité de la Base Lunaire -->
+      <div class="hud-panel p-4 space-y-3.5">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span class="font-display text-xs font-bold tracking-wider text-sky-300 uppercase">État de la Base</span>
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+        </div>
+
+        <!-- Énergie -->
+        <div>
+          <div class="flex justify-between text-xs font-mono mb-1">
+            <span class="text-amber-300">⚡ Réacteur</span>
+            <span id="val-energy" class="font-bold text-white">75%</span>
+          </div>
+          <div class="gauge-track h-2.5 rounded-full overflow-hidden">
+            <div id="bar-energy" class="h-full bg-gradient-to-r from-amber-500 to-yellow-300 transition-all duration-500" style="width: 75%"></div>
+          </div>
+        </div>
+
+        <!-- Bouclier -->
+        <div>
+          <div class="flex justify-between text-xs font-mono mb-1">
+            <span class="text-rose-300">🛡️ Bouclier</span>
+            <span id="val-shield" class="font-bold text-white">75%</span>
+          </div>
+          <div class="gauge-track h-2.5 rounded-full overflow-hidden">
+            <div id="bar-shield" class="h-full bg-gradient-to-r from-rose-600 to-pink-400 transition-all duration-500" style="width: 75%"></div>
+          </div>
+        </div>
+
+        <!-- Biosphère -->
+        <div>
+          <div class="flex justify-between text-xs font-mono mb-1">
+            <span class="text-emerald-300">🌱 Oxygène O₂</span>
+            <span id="val-life" class="font-bold text-white">75%</span>
+          </div>
+          <div class="gauge-track h-2.5 rounded-full overflow-hidden">
+            <div id="bar-life" class="h-full bg-gradient-to-r from-emerald-600 to-teal-300 transition-all duration-500" style="width: 75%"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Équipage en Direct (5 Postes) -->
+      <div class="hud-panel p-4 space-y-2.5">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span class="font-display text-xs font-bold tracking-wider text-sky-300 uppercase">Équipage (5 Postes)</span>
+          <span class="text-[10px] font-mono text-slate-400">LIVE</span>
+        </div>
+        <div id="crew-status-list" class="space-y-2">
+          <!-- Injecté dynamiquement -->
+        </div>
+      </div>
+    </section>
+
+    <!-- COLONNE CENTRALE (6 cols) : SCÈNE BASE LUNAIRE + CONSOLE DE CALCUL -->
+    <section class="lg:col-span-6 space-y-4">
+
+      <!-- Écran Visuel Animé de la Base Lunaire -->
+      <div class="hud-panel p-3 relative overflow-hidden">
+        <canvas id="moon-base-canvas" class="w-full h-36 sm:h-44 rounded-lg block bg-slate-950/90"></canvas>
+        
+        <!-- Overlay Radio Mission en bas de l'écran radar -->
+        <div class="mt-2.5 px-3 py-2 rounded-lg bg-slate-950/90 border border-sky-500/25 flex items-center gap-2.5">
+          <span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-mono text-[10px] font-bold shrink-0">RADIO</span>
+          <p id="hud-radio-text" class="text-xs font-mono text-slate-200 truncate">En attente de synchronisation...</p>
+        </div>
+      </div>
+
+      <!-- Terminal Interactif du Poste du Joueur -->
+      <div class="hud-panel p-4 sm:p-6 border-sky-400/50 glow-active space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <span id="puzzle-role-tag" class="px-2.5 py-1 rounded-md bg-amber-500/20 border border-amber-400/40 text-amber-300 font-mono text-xs font-bold">
+            ⚡ POSTE 1 : ÉNERGIE
+          </span>
+          <span class="text-[11px] font-mono text-slate-400">Pilote : <strong id="hud-my-name" class="text-white">Astronaute</strong></span>
+        </div>
+
+        <div>
+          <h2 id="puzzle-heading" class="font-display text-lg sm:text-xl font-black text-white">Terminal de Contrôle</h2>
+          <p id="puzzle-instructions" class="text-xs sm:text-sm text-slate-300 mt-1">Résolvez le calcul pour verrouiller votre système.</p>
+        </div>
+
+        <!-- Zone dynamique des boutons du mini-jeu -->
+        <div id="puzzle-body" class="space-y-3.5">
+          <!-- Injecté par buildPuzzleForRole() -->
+        </div>
+
+        <!-- Validation & Alerte d'erreur fatale -->
+        <div class="pt-2 border-t border-slate-800/90 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="space-y-1">
+            <div class="flex items-center gap-2 text-xs font-mono">
+              <span class="text-slate-400">TENTATIVES RESTANTES :</span>
+              <span id="hud-my-attempts" class="text-sm font-bold text-rose-400">❤️❤️❤️ (3/3)</span>
+            </div>
+            <p id="puzzle-status-msg" class="text-xs font-mono text-amber-300">
+              ⚠️ 3 tentatives max avant échec collectif !
+            </p>
+          </div>
+          <button type="button" id="btn-submit-task" onclick="submitMyTask()"
+            class="game-btn shrink-0 px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-display font-black text-xs sm:text-sm uppercase tracking-wider shadow-lg shadow-emerald-500/25">
+            ✔ Verrouiller mon Poste
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- COLONNE DROITE (3 cols) : CLASSEMENT LIVE + COMMS RAPIDES -->
+    <section class="lg:col-span-3 space-y-4">
+      
+      <!-- Classement Mondial en Live -->
+      <div class="hud-panel p-4 space-y-3">
+        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span class="font-display text-xs font-bold tracking-wider text-amber-300 uppercase">🏆 Classement Live</span>
+          <span class="text-[10px] font-mono text-emerald-400">TEMPS RÉEL</span>
+        </div>
+        <div id="leaderboard-list" class="space-y-2">
+          <!-- Injecté dynamiquement -->
+        </div>
+      </div>
+
+      <!-- Radio Tactique Rapide -->
+      <div class="hud-panel p-4 space-y-2.5">
+        <div class="font-display text-xs font-bold tracking-wider text-sky-300 uppercase border-b border-slate-800 pb-2">
+          🎙️ Comms Escouade
+        </div>
+        <div class="grid grid-cols-1 gap-2">
+          <button type="button" onclick="sendQuickRadio('⚡ J’ai presque fini mon calcul !')"
+            class="game-btn px-3 py-2 rounded-lg hud-subpanel text-left text-xs font-mono text-slate-200 hover:border-sky-400/50">
+            ⚡ « J’ai presque fini ! »
+          </button>
+          <button type="button" onclick="sendQuickRadio('⏳ Attention au chrono les gars !')"
+            class="game-btn px-3 py-2 rounded-lg hud-subpanel text-left text-xs font-mono text-amber-300 hover:border-amber-400/50">
+            ⏳ « Attention au chrono ! »
+          </button>
+          <button type="button" onclick="sendQuickRadio('🤝 Bien joué l’équipe, on continue !')"
+            class="game-btn px-3 py-2 rounded-lg hud-subpanel text-left text-xs font-mono text-emerald-300 hover:border-emerald-400/50">
+            🤝 « Bien joué l’équipe ! »
+          </button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ========================================================= -->
+  <!-- MODALE DE FIN DE PARTIE (VICTOIRE OU ÉCHEC COLLECTIF)      -->
+  <!-- ========================================================= -->
+  <div id="endgame-modal" class="hidden fixed inset-0 z-50 items-center justify-center p-4 bg-slate-950/90 backdrop-blur-lg">
+    <div class="hud-panel max-w-lg w-full p-6 sm:p-8 text-center space-y-5 border-2 border-sky-400/50">
+      <div id="end-icon" class="text-5xl sm:text-6xl mx-auto">💥</div>
+      <div>
+        <div id="end-subtitle" class="text-xs font-mono uppercase tracking-[0.2em] text-rose-400 font-bold">MISSION INTERROMPUE</div>
+        <h2 id="end-title" class="font-display text-2xl sm:text-3xl font-black text-white mt-1">ÉCHEC DE L'ESCOUADE</h2>
+      </div>
+      <p id="end-desc" class="text-sm text-slate-300 leading-relaxed bg-slate-950/70 p-4 rounded-xl border border-slate-800">
+        Un membre de l'équipe a commis une erreur.
+      </p>
+      <div class="hud-subpanel p-3.5 flex items-center justify-around">
+        <div>
+          <div class="text-[10px] font-mono text-slate-400 uppercase">SCORE FINAL</div>
+          <div id="end-score" class="font-display text-xl font-black text-amber-300">1 500</div>
+        </div>
+        <div class="h-8 w-px bg-slate-800"></div>
+        <div>
+          <div class="text-[10px] font-mono text-slate-400 uppercase">JOUR ATTEINT</div>
+          <div id="end-sol" class="font-display text-xl font-black text-sky-400">Sol 1 / 5</div>
+        </div>
+      </div>
+      <div id="end-restart-zone" class="space-y-2">
+        <button type="button" id="btn-restart-mission" onclick="restartMission()"
+          class="game-btn w-full py-3.5 rounded-xl bg-gradient-to-r from-sky-500 to-emerald-400 text-slate-950 font-display font-black text-sm uppercase tracking-wider">
+          🔄 Relancer la Mission (Commandant)
+        </button>
+        <p id="end-restart-hint" class="hidden text-xs font-mono text-amber-300"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- LOGIQUE DU JEU & SYNCHRONISATION MULTIJOUEUR              -->
+  <!-- ========================================================= -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // --- SYNTHÉTISEUR SONORE DE JEU VIDÉO (WEB AUDIO API) ---
+    let audioEnabled = true;
+    let audioCtx = null;
+
+    function playSfx(type) {
+      if (!audioEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'click') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(520, now);
+          osc.frequency.exponentialRampToValueAtTime(780, now + 0.06);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+          osc.start(now);
+          osc.stop(now + 0.07);
+        } else if (type === 'success') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(440, now);
+          osc.frequency.setValueAtTime(659, now + 0.09);
+          osc.frequency.setValueAtTime(880, now + 0.18);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+          osc.start(now);
+          osc.stop(now + 0.35);
+        } else if (type === 'fail') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(220, now);
+          osc.frequency.linearRampToValueAtTime(85, now + 0.45);
+          gain.gain.setValueAtTime(0.16, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.48);
+          osc.start(now);
+          osc.stop(now + 0.48);
+        } else if (type === 'tick') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(920, now);
+          gain.gain.setValueAtTime(0.04, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+          osc.start(now);
+          osc.stop(now + 0.04);
+        }
+      } catch (e) {}
+    }
+
+    window.toggleAudio = function() {
+      audioEnabled = !audioEnabled;
+      const icon = audioEnabled ? '🔊' : '🔇';
+      const l1 = document.getElementById('sound-icon-lobby');
+      const l2 = document.getElementById('sound-icon-hud');
+      if (l1) l1.textContent = icon;
+      if (l2) l2.textContent = icon;
+      if (audioEnabled) playSfx('click');
+    };
+
+    // --- ÉTAT DU JEU ---
+    const ROLES = ['energy', 'shield', 'life', 'comms', 'nav'];
+    const ROLE_META = {
+      energy: { icon: '⚡', label: 'Énergie', color: 'text-amber-300' },
+      shield: { icon: '🛡️', label: 'Bouclier', color: 'text-rose-300' },
+      life:   { icon: '🌱', label: 'Biosphère', color: 'text-emerald-300' },
+      comms:  { icon: '📡', label: 'Télémétrie', color: 'text-sky-300' },
+      nav:    { icon: '🧭', label: 'Navigation', color: 'text-purple-300' }
+    };
+
+    const params = new URLSearchParams(window.location.search);
+    const hasSharedRoom = Boolean(params.get('room'));
+    const defaultRoom = (params.get('room') || 'ARTEMIS-5').toUpperCase();
+
+    const state = {
+      gameMode: hasSharedRoom ? 'coop' : 'solo',
+      playerId: 'p_' + Math.random().toString(36).substring(2, 9),
+      playerName: 'Astronaute',
+      roomCode: defaultRoom,
+      commanderId: null,
+      commanderName: null,
+      commanderOnline: false,
+      myRole: null,
+      useAiBots: !hasSharedRoom,
+      started: false,
+      sol: 1,
+      maxSols: 5,
+      secondsLeft: 75,
+      score: 1500,
+      energy: 75,
+      shield: 75,
+      life: 75,
+      gameOver: false,
+      failReason: '',
+      radioText: "En attente du lancement par le Commandant...",
+      puzzle: null,
+      lobbySeats: {
+        energy: null,
+        shield: null,
+        life: null,
+        comms: null,
+        nav: null
+      },
+      crew: {
+        energy: { playerId: null, name: 'Poste libre', done: false, attempts: 3, isBot: false },
+        shield: { playerId: null, name: 'Poste libre', done: false, attempts: 3, isBot: false },
+        life:   { playerId: null, name: 'Poste libre', done: false, attempts: 3, isBot: false },
+        comms:  { playerId: null, name: 'Poste libre', done: false, attempts: 3, isBot: false },
+        nav:    { playerId: null, name: 'Poste libre', done: false, attempts: 3, isBot: false }
+      }
+    };
+
+    function isMeCommander() {
+      if (state.gameMode === 'solo') return true;
+      return !!(state.commanderId && state.commanderId === state.playerId);
+    }
+
+    window.selectGameMode = function(mode) {
+      playSfx('click');
+      state.gameMode = mode;
+      const aiCheckbox = document.getElementById('lobby-ai-fill');
+      if (mode === 'solo') {
+        state.useAiBots = true;
+        if (aiCheckbox) aiCheckbox.checked = true;
+      } else {
+        state.useAiBots = false;
+        if (aiCheckbox) aiCheckbox.checked = false;
+      }
+      showLobbyError('');
+      updateLobbyUI();
+    };
+
+    function updateLobbyUI() {
+      const isSolo = state.gameMode === 'solo';
+      const btnSolo = document.getElementById('mode-btn-solo');
+      const btnCoop = document.getElementById('mode-btn-coop');
+      if (btnSolo && btnCoop) {
+        btnSolo.className = isSolo
+          ? 'game-btn p-3.5 rounded-xl border-2 border-emerald-400 bg-emerald-500/15 text-left flex items-center gap-3 shadow-lg shadow-emerald-500/10'
+          : 'game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left flex items-center gap-3 opacity-80 hover:opacity-100';
+        btnCoop.className = !isSolo
+          ? 'game-btn p-3.5 rounded-xl border-2 border-sky-400 bg-sky-500/15 text-left flex items-center gap-3 shadow-lg shadow-sky-500/10'
+          : 'game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left flex items-center gap-3 opacity-80 hover:opacity-100';
+      }
+
+      const coopRoomBox = document.getElementById('coop-room-box');
+      const coopCmdRow = document.getElementById('coop-commander-row');
+      if (coopRoomBox) coopRoomBox.classList.toggle('hidden', isSolo);
+      if (coopCmdRow) coopCmdRow.classList.toggle('hidden', isSolo);
+
+      const aiCheckbox = document.getElementById('lobby-ai-fill');
+      if (isSolo) {
+        state.useAiBots = true;
+        if (aiCheckbox) aiCheckbox.checked = true;
+      } else {
+        state.useAiBots = aiCheckbox?.checked || false;
+      }
+      const amICommander = isMeCommander();
+
+      const aiBox = document.getElementById('commander-ai-box');
+      if (aiBox && aiCheckbox) {
+        aiCheckbox.disabled = !amICommander;
+        aiBox.classList.toggle('opacity-50', !amICommander);
+      }
+
+      const cmdLabel = document.getElementById('commander-label');
+      const cmdBadge = document.getElementById('commander-badge');
+      if (cmdLabel && cmdBadge) {
+        if (!state.commanderId) {
+          cmdLabel.textContent = '👑 Aucun Commandant dans ce salon';
+          cmdBadge.textContent = 'ATTENTE';
+          cmdBadge.className = 'px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold';
+        } else if (amICommander) {
+          cmdLabel.textContent = `👑 Vous êtes le Commandant (${state.playerName})`;
+          cmdBadge.textContent = 'HÔTE ACTIF';
+          cmdBadge.className = 'px-2.5 py-1 rounded-md bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold';
+        } else if (!state.commanderOnline) {
+          cmdLabel.textContent = `⚠️ Commandant (${state.commanderName}) absent du salon`;
+          cmdBadge.textContent = 'ABSENT';
+          cmdBadge.className = 'px-2.5 py-1 rounded-md bg-rose-500/20 text-rose-300 font-mono text-[10px] font-bold';
+        } else {
+          cmdLabel.textContent = `👑 Commandant : ${state.commanderName}`;
+          cmdBadge.textContent = 'EN LIGNE';
+          cmdBadge.className = 'px-2.5 py-1 rounded-md bg-sky-500/20 text-sky-300 font-mono text-[10px] font-bold';
+        }
+      }
+
+      const accents = {
+        energy: 'border-amber-400 bg-amber-500/20 shadow-lg shadow-amber-500/10',
+        shield: 'border-rose-400 bg-rose-500/20 shadow-lg shadow-rose-500/10',
+        life:   'border-emerald-400 bg-emerald-500/20 shadow-lg shadow-emerald-500/10',
+        comms:  'border-sky-400 bg-sky-500/20 shadow-lg shadow-sky-500/10',
+        nav:    'border-purple-400 bg-purple-500/20 shadow-lg shadow-purple-500/10'
+      };
+
+      let reservedCount = 0;
+      ROLES.forEach(r => {
+        const seat = isSolo
+          ? (state.myRole === r ? { playerId: state.playerId, name: state.playerName } : null)
+          : state.lobbySeats[r];
+        if (seat) reservedCount++;
+        const card = document.getElementById(`role-card-${r}`);
+        const ownerBadge = document.getElementById(`role-owner-${r}`);
+        if (!card || !ownerBadge) return;
+        const span = r === 'nav' ? ' sm:col-span-2 lg:col-span-2' : '';
+
+        if (seat && seat.playerId === state.playerId) {
+          card.disabled = false;
+          card.className = `game-btn p-3.5 rounded-xl border-2 ${accents[r]} text-left${span}`;
+          ownerBadge.textContent = `✔ Vous (${seat.name})`;
+          ownerBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/25 text-emerald-300 font-bold';
+        } else if (seat && seat.playerId !== state.playerId) {
+          card.disabled = true;
+          card.className = `p-3.5 rounded-xl border-2 border-rose-500/40 bg-slate-950/90 text-left opacity-55 cursor-not-allowed${span}`;
+          ownerBadge.textContent = `🔒 Pris par ${seat.name}`;
+          ownerBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 font-bold';
+        } else {
+          card.disabled = false;
+          card.className = `game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/85 text-left opacity-90 hover:opacity-100${span}`;
+          ownerBadge.textContent = isSolo ? 'Libre (IA)' : 'Libre';
+          ownerBadge.className = 'text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300';
+        }
+      });
+
+      const slotsCount = document.getElementById('lobby-slots-count');
+      if (slotsCount) {
+        slotsCount.textContent = isSolo
+          ? (state.myRole ? '1 Joueur + 4 IA prêts' : 'Choisissez votre poste')
+          : `${reservedCount} / 5 postes réservés`;
+      }
+
+      // Mise à jour de la liste visuelle des 5 tâches et des joueurs qui les ont choisies
+      const rosterBox = document.getElementById('lobby-roster-box');
+      const rosterList = document.getElementById('lobby-roster-list');
+      if (rosterBox && rosterList) {
+        rosterBox.classList.toggle('hidden', isSolo);
+        rosterList.innerHTML = ROLES.map(r => {
+          const seat = state.lobbySeats[r];
+          const meta = ROLE_META[r];
+          const isMe = seat && seat.playerId === state.playerId;
+          return `
+            <div class="px-2.5 py-2 rounded-lg border ${
+              seat
+                ? (isMe ? 'border-emerald-400/60 bg-emerald-500/15' : 'border-sky-400/50 bg-sky-500/10')
+                : 'border-slate-800 bg-slate-950/70'
+            }">
+              <div class="text-[10px] font-mono font-bold ${meta.color}">${meta.icon} ${meta.label}</div>
+              <div class="text-xs font-semibold truncate mt-0.5 ${seat ? 'text-white' : 'text-slate-500 italic'}">
+                ${seat ? `${seat.name}${isMe ? ' (Vous)' : ''}` : 'En attente...'}
+              </div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      const btnLaunch = document.getElementById('btn-launch-mission');
+      if (btnLaunch) {
+        if (isSolo) {
+          btnLaunch.disabled = !state.myRole;
+          btnLaunch.textContent = state.myRole
+            ? '🚀 Lancer la Mission Solo (1 Joueur + 4 IA)'
+            : 'Choisissez d’abord votre poste ci-dessus';
+        } else if (!amICommander) {
+          btnLaunch.disabled = true;
+          btnLaunch.textContent = `⏳ En attente du lancement par ${state.commanderName || 'le Commandant'}...`;
+        } else {
+          const canStart = Boolean(state.myRole) && (reservedCount === 5 || state.useAiBots);
+          btnLaunch.disabled = !canStart;
+          btnLaunch.textContent = canStart
+            ? `🚀 Lancer la Mission (${reservedCount}/5 Joueurs${state.useAiBots && reservedCount < 5 ? ' + IA' : ''})`
+            : `Réservez votre poste (${reservedCount}/5 joueurs prêts)`;
+        }
+      }
+    }
+
+    function showLobbyError(msg) {
+      const errEl = document.getElementById('lobby-role-error');
+      if (!errEl) return;
+      if (!msg) {
+        errEl.classList.add('hidden');
+        errEl.textContent = '';
+      } else {
+        errEl.textContent = msg;
+        errEl.classList.remove('hidden');
+      }
+    }
+
+    window.pickRole = async function(role) {
+      playSfx('click');
+      showLobbyError('');
+      const nameInput = document.getElementById('lobby-player-name');
+      state.playerName = (nameInput?.value.trim() || state.playerName || 'Astronaute').slice(0, 16);
+
+      if (state.gameMode === 'solo') {
+        state.myRole = role;
+        updateLobbyUI();
+        return;
+      }
+
+      const occupant = state.lobbySeats[role];
+      if (occupant && occupant.playerId !== state.playerId) {
+        showLobbyError(`🔒 Ce poste est déjà réservé par ${occupant.name}.`);
+        return;
+      }
+
+      state.myRole = role;
+      state.lobbySeats[role] = { playerId: state.playerId, name: state.playerName };
+      updateLobbyUI();
+      await syncMyPlayerChoice(role);
+    };
+
+    window.launchMission = async function() {
+      playSfx('success');
+      if (!state.myRole) {
+        showLobbyError('⚠️ Veuillez d’abord choisir un poste parmi les 5 compétences.');
+        return;
+      }
+      if (!isMeCommander()) return;
+
+      const aiNames = ['ARIA-Bot', 'NOVA-Bot', 'ORION-Bot', 'VEGA-Bot', 'LYRA-Bot'];
+      let aiIdx = 0;
+
+      ROLES.forEach(r => {
+        if (state.gameMode === 'solo') {
+          if (r === state.myRole) {
+            state.crew[r] = { playerId: state.playerId, name: state.playerName, done: false, attempts: 3, isBot: false };
+          } else {
+            state.crew[r] = { playerId: `bot_${r}`, name: aiNames[aiIdx++ % aiNames.length], done: false, attempts: 3, isBot: true };
+          }
+        } else {
+          const seat = state.lobbySeats[r];
+          if (seat) {
+            state.crew[r] = { playerId: seat.playerId, name: seat.name, done: false, attempts: 3, isBot: false };
+          } else if (state.useAiBots) {
+            state.crew[r] = { playerId: `bot_${r}`, name: aiNames[aiIdx++ % aiNames.length], done: false, attempts: 3, isBot: true };
+          }
+        }
+      });
+
+      state.started = true;
+      state.radioText = `🚀 Mission lancée par le Commandant ${state.playerName} ! Verrouillez vos 5 postes.`;
+      enterGameFromLobby();
+      if (state.gameMode === 'coop') {
+        await syncToCloud();
+      }
+    };
+
+    // --- SYNCHRONISATION MULTI-APPAREILS (GUN.JS P2P + LOCAL) ---
+    let db = null;
+    let currentUser = null;
+    let unsub = null;
+    let roomInputTimer = null;
+    let localSyncChannel = null;
+    let gunInstance = null;
+    let gunRoomNode = null;
+    let remoteRoomCache = { players: {} };
+
+    function getCleanRoomCode() {
+      const cleanCode = (state.roomCode || 'ARTEMIS-5').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
+      return cleanCode || 'ARTEMIS-5';
+    }
+
+    function getLocalRoomKey() {
+      return `infinity_space_room_${getCleanRoomCode()}`;
+    }
+
+    function readLocalRoomData() {
+      try {
+        const raw = localStorage.getItem(getLocalRoomKey());
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function writeLocalRoomData(updater) {
+      try {
+        const current = readLocalRoomData() || { players: {} };
+        const next = updater(current);
+        localStorage.setItem(getLocalRoomKey(), JSON.stringify(next));
+        if (localSyncChannel) {
+          localSyncChannel.postMessage({ roomCode: state.roomCode, data: next });
+        }
+        return next;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    function initGunMesh() {
+      try {
+        if (typeof Gun !== 'undefined' && !gunInstance) {
+          gunInstance = Gun({
+            peers: [
+              'https://gun-manhattan.herokuapp.com/gun',
+              'https://relay.peer.ooo/gun',
+              'https://peer.wallie.io/gun'
+            ],
+            localStorage: false
+          });
+        }
+      } catch (e) {}
+    }
+
+    function subscribeGunRoom() {
+      initGunMesh();
+      if (!gunInstance) return;
+      const roomKey = `infinity_space_gh_v2_${getCleanRoomCode()}`;
+      remoteRoomCache = { players: {} };
+      gunRoomNode = gunInstance.get(roomKey);
+
+      // Écoute de l'état global du salon (commandant, lancement, chrono, score, jauges)
+      gunRoomNode.get('meta').on((meta) => {
+        if (!meta || typeof meta !== 'object') return;
+        const { _, ...cleanMeta } = meta;
+        if (cleanMeta.crewJson) {
+          try { cleanMeta.crew = JSON.parse(cleanMeta.crewJson); } catch (e) {}
+        }
+        remoteRoomCache = { ...remoteRoomCache, ...cleanMeta };
+        applyRoomSnapshot(remoteRoomCache);
+      });
+
+      // Écoute en direct de chaque joueur et de la tâche choisie
+      gunRoomNode.get('players').map().on((pData, pid) => {
+        if (!pid || pid === '_') return;
+        if (!pData || typeof pData !== 'object') {
+          delete remoteRoomCache.players[pid];
+        } else {
+          const { _, ...cleanPlayer } = pData;
+          remoteRoomCache.players[pid] = cleanPlayer;
+        }
+        applyRoomSnapshot(remoteRoomCache);
+      });
+
+      setNetBadge('ok', `🌐 Salon ${getCleanRoomCode()} en direct (Multi-appareils)`);
+    }
+
+    function publishGunMeta(metaPatch) {
+      if (!gunRoomNode) return;
+      const payload = { ...metaPatch };
+      if (payload.crew) {
+        payload.crewJson = JSON.stringify(payload.crew);
+        delete payload.crew;
+      }
+      gunRoomNode.get('meta').put(payload);
+    }
+
+    function publishGunPlayer(playerPatch) {
+      if (!gunRoomNode) return;
+      gunRoomNode.get('players').get(state.playerId).put({
+        name: state.playerName,
+        role: state.myRole || '',
+        online: true,
+        updatedAt: Date.now(),
+        ...playerPatch
+      });
+    }
+    function initLocalRealtimeFallback() {
+      try {
+        if ('BroadcastChannel' in window) {
+          localSyncChannel = new BroadcastChannel('infinity_space_netlify_sync');
+          localSyncChannel.onmessage = (ev) => {
+            if (ev.data?.roomCode === state.roomCode) {
+              applyRoomSnapshot(ev.data.data);
+            }
+          };
+        }
+        window.addEventListener('storage', (ev) => {
+          if (ev.key === getLocalRoomKey() && ev.newValue) {
+            applyRoomSnapshot(JSON.parse(ev.newValue));
+          }
+        });
+      } catch (e) {}
+
+      subscribeGunRoom();
+
+      const existing = readLocalRoomData();
+      if (existing) {
+        applyRoomSnapshot(existing);
+      } else {
+        state.commanderId = state.playerId;
+        state.commanderName = state.playerName;
+        state.commanderOnline = true;
+        announcePresenceInRoom(true);
+        updateLobbyUI();
+      }
+      setNetBadge('ok', `🌐 Salon ${getCleanRoomCode()} synchronisé`);
+    }
+    async function announcePresenceInRoom(claimCommander = false) {
+      const ref = getRoomRef();
+      if (!ref) {
+        const updated = writeLocalRoomData((cur) => {
+          const next = {
+            ...cur,
+            players: {
+              ...(cur.players || {}),
+              [state.playerId]: {
+                name: state.playerName,
+                role: state.myRole || null,
+                online: true,
+                updatedAt: Date.now()
+              }
+            }
+          };
+          if (claimCommander || !next.commanderId) {
+            next.commanderId = state.playerId;
+            next.commanderName = state.playerName;
+          }
+          return next;
+        });
+        publishGunPlayer({ role: state.myRole || '' });
+        if (claimCommander && updated?.commanderId === state.playerId) {
+          publishGunMeta({
+            commanderId: state.playerId,
+            commanderName: state.playerName
+          });
+        }
+        return;
+      }
+      try {
+        const payload = {
+          players: {
+            [state.playerId]: {
+              name: state.playerName,
+              role: state.myRole || null,
+              online: true,
+              updatedAt: Date.now()
+            }
+          }
+        };
+        if (claimCommander) {
+          payload.commanderId = state.playerId;
+          payload.commanderName = state.playerName;
+        }
+        await setDoc(ref, payload, { merge: true });
+      } catch (e) {}
+    }
+
+    async function syncMyPlayerChoice(role) {
+      const ref = getRoomRef();
+      if (!ref) {
+        const updated = writeLocalRoomData((cur) => ({
+          ...cur,
+          players: {
+            ...(cur.players || {}),
+            [state.playerId]: {
+              name: state.playerName,
+              role: role,
+              online: true,
+              updatedAt: Date.now()
+            }
+          }
+        }));
+        publishGunPlayer({ role: role || '' });
+        if (updated) applyRoomSnapshot(updated);
+        return;
+      }
+      try {
+        await setDoc(ref, {
+          players: {
+            [state.playerId]: {
+              name: state.playerName,
+              role: role,
+              online: true,
+              updatedAt: Date.now()
+            }
+          }
+        }, { merge: true });
+      } catch (e) {
+        showLobbyError("⚠️ Impossible de synchroniser votre poste avec le salon.");
+      }
+    }
+
+    async function syncToCloud() {
+      const ref = getRoomRef();
+      const snapshotPayload = {
+        started: state.started,
+        commanderId: state.commanderId,
+        commanderName: state.commanderName,
+        sol: state.sol,
+        score: state.score,
+        energy: state.energy,
+        shield: state.shield,
+        life: state.life,
+        gameOver: state.gameOver,
+        failReason: state.failReason || '',
+        radioText: state.radioText,
+        crew: state.crew
+      };
+      if (!ref) {
+        writeLocalRoomData((cur) => ({ ...cur, ...snapshotPayload }));
+        publishGunMeta(snapshotPayload);
+        return;
+      }
+      try {
+        await setDoc(ref, snapshotPayload, { merge: true });
+      } catch (e) {}
+    }
+
+    function subscribeToRoom() {
+      const ref = getRoomRef();
+      if (!ref) {
+        subscribeGunRoom();
+        const existing = readLocalRoomData();
+        if (existing) {
+          applyRoomSnapshot(existing);
+        } else {
+          state.commanderId = state.playerId;
+          state.commanderName = state.playerName;
+          state.commanderOnline = true;
+          announcePresenceInRoom(true);
+          updateLobbyUI();
+        }
+        setNetBadge('ok', `🌐 Salon ${getCleanRoomCode()} synchronisé`);
+        return;
+      }
+      if (unsub) unsub();
+      setNetBadge('warn', `⏳ Connexion à ${state.roomCode}...`);
+
+      unsub = onSnapshot(ref, (snap) => {
+        setNetBadge('ok', `🟢 Salon ${state.roomCode} en direct`);
+        if (!snap.exists()) {
+          state.commanderId = state.playerId;
+          state.commanderName = state.playerName;
+          state.commanderOnline = true;
+          state.lobbySeats = { energy: null, shield: null, life: null, comms: null, nav: null };
+          announcePresenceInRoom(true);
+          updateLobbyUI();
+          return;
+        }
+        applyRoomSnapshot(snap.data());
+      }, () => {
+        setNetBadge('err', '❌ Déconnecté du salon');
+      });
+    }
+      if (inputName) {
+        inputName.addEventListener('input', () => {
+          state.playerName = inputName.value.trim() || 'Astronaute';
+          if (isMeCommander()) {
+            state.commanderName = state.playerName;
+          }
+          if (state.myRole) {
+            state.lobbySeats[state.myRole] = { playerId: state.playerId, name: state.playerName };
+          }
+          updateLobbyUI();
+          announcePresenceInRoom(isMeCommander());
+        });
+      }
+      window.addEventListener('beforeunload', () => {
+        const ref = getRoomRef();
+        if (ref) {
+          updateDoc(ref, { [`players.${state.playerId}.online`]: false }).catch(() => {});
+        } else {
+          writeLocalRoomData((cur) => {
+            if (cur.players?.[state.playerId]) {
+              cur.players[state.playerId].online = false;
+            }
+            return cur;
+          });
+        }
+      });
+      updateLobbyUI();
+    }
+    setupLobbyListeners();
+
+    window.copyShareLink = function() {
+      playSfx('click');
+      const code = (document.getElementById('lobby-room-code')?.value.trim() || state.roomCode || 'ARTEMIS-5').toUpperCase();
+      state.roomCode = code;
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', code);
+      const tempInput = document.createElement('input');
+      tempInput.value = url.toString();
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+
+      const toast = document.getElementById('share-toast');
+      if (toast) {
+        toast.classList.remove('hidden');
+        setTimeout(() => toast.classList.add('hidden'), 3500);
+      }
+    };
+
+    function enterGameFromLobby(remoteData = null) {
+      if (remoteData) {
+        if (typeof remoteData.sol === 'number') state.sol = remoteData.sol;
+        if (typeof remoteData.score === 'number') state.score = remoteData.score;
+        if (typeof remoteData.energy === 'number') state.energy = remoteData.energy;
+        if (typeof remoteData.shield === 'number') state.shield = remoteData.shield;
+        if (typeof remoteData.life === 'number') state.life = remoteData.life;
+        if (remoteData.radioText) state.radioText = remoteData.radioText;
+        if (remoteData.crew) {
+          ROLES.forEach(r => {
+            if (remoteData.crew[r]) {
+              state.crew[r] = { attempts: 3, ...remoteData.crew[r] };
+            }
+          });
+        }
+      }
+      state.started = true;
+      const badgeRoom = document.getElementById('badge-room');
+      if (badgeRoom) badgeRoom.textContent = state.roomCode;
+
+      const lobbyModal = document.getElementById('lobby-modal');
+      if (lobbyModal) lobbyModal.classList.add('hidden');
+
+      buildPuzzleForRole();
+      renderUI();
+      startTimer();
+    }
+
+    function buildPuzzleForRole() {
+      const role = state.myRole || 'energy';
+      const meta = ROLE_META[role];
+      const tagEl = document.getElementById('puzzle-role-tag');
+      const headEl = document.getElementById('puzzle-heading');
+      const instEl = document.getElementById('puzzle-instructions');
+      const bodyEl = document.getElementById('puzzle-body');
+      const statusEl = document.getElementById('puzzle-status-msg');
+      const btnSubmit = document.getElementById('btn-submit-task');
+
+      if (btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.textContent = '✔ Verrouiller mon Poste';
+      }
+      if (statusEl) {
+        statusEl.textContent = '⚠️ 3 tentatives max avant échec collectif !';
+        statusEl.className = 'text-xs font-mono text-amber-300';
+      }
+
+      const sol = state.sol || 1;
+      tagEl.textContent = `${meta.icon} POSTE : ${meta.label.toUpperCase()}`;
+
+      if (role === 'energy') {
+        const base = 12 + sol * 4;
+        const cells = [base, base + 5, base + 9, base + 14, base + 3, base + 11];
+        const i1 = 0, i2 = 2, i3 = 4;
+        const target = cells[i1] + cells[i2] + cells[i3];
+        state.puzzle = { type: 'energy', cells, target, picked: [] };
+        headEl.textContent = `Équilibrage Réacteur — Cible : ${target} MW`;
+        instEl.textContent = `Sélectionnez exactement les cellules dont la somme vaut ${target} MW.`;
+        bodyEl.innerHTML = `
+          <div class="hud-subpanel p-3 flex items-center justify-between text-xs font-mono">
+            <span class="text-slate-400">PUISSANCE CUMULÉE :</span>
+            <span id="p-energy-sum" class="text-base font-bold text-amber-300">0 / ${target} MW</span>
+          </div>
+          <div class="grid grid-cols-3 gap-2.5">
+            ${cells.map((val, idx) => `
+              <button type="button" id="p-cell-${idx}" onclick="toggleEnergyCell(${idx})"
+                class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/90 font-display text-base font-bold text-slate-200">
+                +${val} MW
+              </button>
+            `).join('')}
+          </div>
+        `;
+      } else if (role === 'shield') {
+        const start = 4 + sol * 3;
+        const step = 3 + sol;
+        const seq = [start, start + step, start + step * 2, start + step * 3];
+        const answer = start + step * 4;
+        const opts = [answer, answer + step, answer - 2, answer + 4].sort(() => Math.random() - 0.5);
+        state.puzzle = { type: 'shield', answer, chosen: null };
+        headEl.textContent = `Harmonisation Bouclier — Suite : ${seq.join(' • ')} • ?`;
+        instEl.textContent = `Trouvez la fréquence suivante pour verrouiller le dôme magnétique.`;
+        bodyEl.innerHTML = `
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            ${opts.map((val, idx) => `
+              <button type="button" id="p-sh-${idx}" onclick="pickShield(${val}, ${idx})"
+                class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/90 font-display text-base font-bold text-slate-200">
+                ${val} Hz
+              </button>
+            `).join('')}
+          </div>
+        `;
+      } else if (role === 'life') {
+        const wTarget = 40 + sol * 10;
+        const lTarget = 30 + sol * 10;
+        state.puzzle = { type: 'life', water: 20, light: 20, wTarget, lTarget };
+        headEl.textContent = `Serre Hydroponique — Eau : ${wTarget}% | Lumière : ${lTarget}%`;
+        instEl.textContent = `Ajustez les vannes d'eau et de lumière solaire par paliers de 10%.`;
+        bodyEl.innerHTML = `
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div class="hud-subpanel p-3.5 space-y-2">
+              <div class="flex justify-between text-xs font-mono">
+                <span class="text-sky-300">💧 Irrigation Eau</span>
+                <span id="p-life-w" class="font-bold text-white">20% / ${wTarget}%</span>
+              </div>
+              <div class="flex gap-2">
+                <button type="button" onclick="adjustLife('water', -10)" class="game-btn flex-1 py-2 rounded-lg bg-slate-800 font-bold">-10%</button>
+                <button type="button" onclick="adjustLife('water', 10)" class="game-btn flex-1 py-2 rounded-lg bg-sky-500/30 border border-sky-400/40 font-bold text-sky-200">+10%</button>
+              </div>
+            </div>
+            <div class="hud-subpanel p-3.5 space-y-2">
+              <div class="flex justify-between text-xs font-mono">
+                <span class="text-amber-300">☀️ Spectre UV</span>
+                <span id="p-life-l" class="font-bold text-white">20% / ${lTarget}%</span>
+              </div>
+              <div class="flex gap-2">
+                <button type="button" onclick="adjustLife('light', -10)" class="game-btn flex-1 py-2 rounded-lg bg-slate-800 font-bold">-10%</button>
+                <button type="button" onclick="adjustLife('light', 10)" class="game-btn flex-1 py-2 rounded-lg bg-amber-500/30 border border-amber-400/40 font-bold text-amber-200">+10%</button>
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (role === 'comms') {
+        const targetNum = Math.min(15, 5 + sol * 2);
+        state.puzzle = { type: 'comms', bits: [0, 0, 0, 0], targetNum };
+        headEl.textContent = `Décodage Télémétrie — Code Binaire : ${targetNum}`;
+        instEl.textContent = `Activez les interrupteurs (8 - 4 - 2 - 1) pour obtenir exactement ${targetNum}.`;
+        bodyEl.innerHTML = `
+          <div class="hud-subpanel p-3 flex items-center justify-between text-xs font-mono">
+            <span class="text-slate-400">SIGNAL ACTUEL :</span>
+            <span class="text-base font-bold text-sky-300"><span id="p-comms-val">0</span> / ${targetNum}</span>
+          </div>
+          <div class="grid grid-cols-4 gap-2.5">
+            ${[8, 4, 2, 1].map((w, idx) => `
+              <button type="button" id="p-bit-${idx}" onclick="flipBit(${idx})"
+                class="game-btn p-4 rounded-xl border-2 border-slate-700 bg-slate-900/90 text-center">
+                <div class="text-[11px] font-mono text-slate-400">BIT ${w}</div>
+                <div id="p-bit-lbl-${idx}" class="font-display text-2xl font-bold text-slate-500 mt-1">0</div>
+              </button>
+            `).join('')}
+          </div>
+        `;
+      } else {
+        const m = 12 + sol * 3;
+        const a = 4 + sol;
+        const answer = m * a;
+        const opts = [answer, answer + m, answer - a, answer + 10].sort(() => Math.random() - 0.5);
+        state.puzzle = { type: 'nav', answer, chosen: null };
+        headEl.textContent = `Poussée Orbitale : F = m × a (m = ${m} t, a = ${a} m/s²)`;
+        instEl.textContent = `Calculez la poussée F nécessaire en kiloNewtons (kN).`;
+        bodyEl.innerHTML = `
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            ${opts.map((val, idx) => `
+              <button type="button" id="p-nav-${idx}" onclick="pickNav(${val}, ${idx})"
+                class="game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/90 font-display text-base font-bold text-slate-200">
+                ${val} kN
+              </button>
+            `).join('')}
+          </div>
+        `;
+      }
+    }
+
+    window.toggleEnergyCell = function(idx) {
+      playSfx('click');
+      const p = state.puzzle;
+      if (!p || p.type !== 'energy') return;
+      const pos = p.picked.indexOf(idx);
+      if (pos >= 0) p.picked.splice(pos, 1);
+      else p.picked.push(idx);
+      let sum = 0;
+      p.cells.forEach((v, i) => {
+        const active = p.picked.includes(i);
+        if (active) sum += v;
+        const btn = document.getElementById(`p-cell-${i}`);
+        if (btn) {
+          btn.className = active
+            ? "game-btn p-3.5 rounded-xl border-2 border-amber-400 bg-amber-500/25 font-display text-base font-bold text-amber-200 shadow-lg shadow-amber-500/20"
+            : "game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/90 font-display text-base font-bold text-slate-200";
+        }
+      });
+      const sumEl = document.getElementById('p-energy-sum');
+      if (sumEl) sumEl.textContent = `${sum} / ${p.target} MW`;
+    };
+
+    window.pickShield = function(val, idx) {
+      playSfx('click');
+      const p = state.puzzle;
+      if (!p || p.type !== 'shield') return;
+      p.chosen = val;
+      for (let i = 0; i < 4; i++) {
+        const el = document.getElementById(`p-sh-${i}`);
+        if (!el) continue;
+        el.className = i === idx
+          ? "game-btn p-3.5 rounded-xl border-2 border-rose-400 bg-rose-500/25 font-display text-base font-bold text-rose-200 shadow-lg shadow-rose-500/20"
+          : "game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/90 font-display text-base font-bold text-slate-200";
+      }
+    };
+
+    window.adjustLife = function(key, delta) {
+      playSfx('click');
+      const p = state.puzzle;
+      if (!p || p.type !== 'life') return;
+      p[key] = Math.max(0, Math.min(100, p[key] + delta));
+      const wEl = document.getElementById('p-life-w');
+      const lEl = document.getElementById('p-life-l');
+      if (wEl) wEl.textContent = `${p.water}% / ${p.wTarget}%`;
+      if (lEl) lEl.textContent = `${p.light}% / ${p.lTarget}%`;
+    };
+
+    window.flipBit = function(idx) {
+      playSfx('click');
+      const p = state.puzzle;
+      if (!p || p.type !== 'comms') return;
+      p.bits[idx] = p.bits[idx] ? 0 : 1;
+      const weights = [8, 4, 2, 1];
+      let total = 0;
+      p.bits.forEach((b, i) => {
+        total += b * weights[i];
+        const btn = document.getElementById(`p-bit-${i}`);
+        const lbl = document.getElementById(`p-bit-lbl-${i}`);
+        if (btn && lbl) {
+          btn.className = b
+            ? "game-btn p-4 rounded-xl border-2 border-sky-400 bg-sky-500/25 text-center shadow-lg shadow-sky-500/20"
+            : "game-btn p-4 rounded-xl border-2 border-slate-700 bg-slate-900/90 text-center";
+          lbl.textContent = b ? '1' : '0';
+          lbl.className = b
+            ? "font-display text-2xl font-bold text-sky-300 mt-1"
+            : "font-display text-2xl font-bold text-slate-500 mt-1";
+        }
+      });
+      const valEl = document.getElementById('p-comms-val');
+      if (valEl) valEl.textContent = total;
+    };
+
+    window.pickNav = function(val, idx) {
+      playSfx('click');
+      const p = state.puzzle;
+      if (!p || p.type !== 'nav') return;
+      p.chosen = val;
+      for (let i = 0; i < 4; i++) {
+        const el = document.getElementById(`p-nav-${i}`);
+        if (!el) continue;
+        el.className = i === idx
+          ? "game-btn p-3.5 rounded-xl border-2 border-purple-400 bg-purple-500/25 font-display text-base font-bold text-purple-200 shadow-lg shadow-purple-500/20"
+          : "game-btn p-3.5 rounded-xl border-2 border-slate-700 bg-slate-900/90 font-display text-base font-bold text-slate-300";
+      }
+    };
+
+    // --- VALIDATION DU POSTE & SYSTÈME À 3 TENTATIVES ---
+    window.submitMyTask = async function() {
+      if (state.gameOver || !state.puzzle || state.crew[state.myRole]?.done) return;
+      const p = state.puzzle;
+      let ok = false;
+
+      if (p.type === 'energy') ok = p.picked.reduce((s, c) => s + p.cells[c], 0) === p.target;
+      if (p.type === 'shield') ok = p.chosen === p.answer;
+      if (p.type === 'life')   ok = p.water === p.wTarget && p.light === p.lTarget;
+      if (p.type === 'comms')  ok = p.bits.reduce((acc, b, idx) => acc + b * [8, 4, 2, 1][idx], 0) === p.targetNum;
+      if (p.type === 'nav')    ok = p.chosen === p.answer;
+
+      const msg = document.getElementById('puzzle-status-msg');
+      if (!ok) {
+        playSfx('fail');
+        triggerShake();
+        const currentAttempts = Math.max(0, (state.crew[state.myRole].attempts ?? 3) - 1);
+        state.crew[state.myRole].attempts = currentAttempts;
+        state.score = Math.max(0, state.score - 150);
+
+        if (currentAttempts <= 0) {
+          const reason = `💥 ${state.playerName} (poste ${ROLE_META[state.myRole].label.toUpperCase()}) a épuisé ses 3 tentatives ! Toute l'équipe a échoué la mission.`;
+          state.gameOver = true;
+          state.failReason = reason;
+          state.radioText = reason;
+          msg.textContent = "❌ 0/3 tentative restante ! Échec collectif de l'équipe.";
+          msg.className = "text-xs font-mono text-rose-400 font-bold";
+          renderUI();
+          openEndModal(false, reason);
+          await syncToCloud();
+          return;
+        }
+
+        state.radioText = `⚠️ ${state.playerName} s'est trompé sur ${ROLE_META[state.myRole].label} (${currentAttempts}/3 tentatives restantes).`;
+        msg.textContent = `❌ Mauvaise réponse ! Attention, il ne vous reste que ${currentAttempts}/3 tentative(s).`;
+        msg.className = "text-xs font-mono text-rose-400 font-bold";
+        renderUI();
+        await syncToCloud();
+        return;
+      }
+
+      playSfx('success');
+      state.crew[state.myRole].done = true;
+      state.score += 250 + state.secondsLeft * 5;
+      state.radioText = `✔ ${state.playerName} a verrouillé le poste ${ROLE_META[state.myRole].label} !`;
+      msg.textContent = "✅ Poste verrouillé ! En attente des autres membres...";
+      msg.className = "text-xs font-mono text-emerald-400 font-bold";
+
+      const btnSubmit = document.getElementById('btn-submit-task');
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.textContent = '✅ Poste Verrouillé';
+      }
+
+      renderUI();
+      await syncToCloud();
+      checkTeamReady();
+    };
+
+    window.sendQuickRadio = async function(txt) {
+      playSfx('click');
+      state.radioText = `[${state.playerName}] ${txt}`;
+      renderUI();
+      await syncToCloud();
+    };
+
+    // --- MINUTEUR, BOTS IA & PROGRESSION ---
+    let timerInterval = null;
+
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      timerInterval = setInterval(async () => {
+        if (!state.started || state.gameOver) return;
+
+        state.secondsLeft--;
+        if (state.secondsLeft <= 10 && state.secondsLeft > 0) {
+          playSfx('tick');
+        }
+
+        // Simulation réaliste des coéquipiers IA activés
+        let botUpdated = false;
+        ROLES.forEach(r => {
+          if (state.crew[r].isBot && !state.crew[r].done && state.secondsLeft <= 46 && Math.random() < 0.25) {
+            state.crew[r].done = true;
+            state.score += 200;
+            state.radioText = `🤖 ${state.crew[r].name} a verrouillé son poste !`;
+            botUpdated = true;
+          }
+        });
+
+        renderUI();
+        if (botUpdated) {
+          await syncToCloud();
+          checkTeamReady();
+        }
+
+        if (state.secondsLeft <= 0) {
+          await nextLunarDay(true);
+        }
+      }, 1000);
+    }
+
+    async function checkTeamReady() {
+      if (state.gameOver) return;
+      const allDone = ROLES.every(r => state.crew[r].done);
+      if (allDone) {
+        await nextLunarDay(false);
+      }
+    }
+
+    async function nextLunarDay(byTimeout) {
+      if (state.gameOver) return;
+
+      const incompleteRoles = ROLES.filter(r => !state.crew[r].done);
+      if (byTimeout && incompleteRoles.length > 0) {
+        playSfx('fail');
+        triggerShake();
+        const missingNames = incompleteRoles.map(r => state.crew[r].name).join(', ');
+        const reason = `⏳ Temps écoulé ! ${missingNames} n'a pas terminé à temps. Toute l'équipe a échoué la mission.`;
+        state.gameOver = true;
+        state.failReason = reason;
+        state.radioText = reason;
+        renderUI();
+        openEndModal(false, reason);
+        await syncToCloud();
+        return;
+      }
+
+      playSfx('success');
+      state.energy = Math.min(100, state.energy + 8);
+      state.shield = Math.min(100, state.shield + 8);
+      state.life   = Math.min(100, state.life + 8);
+      state.score += 500 + state.secondsLeft * 10;
+
+      if (state.sol >= state.maxSols) {
+        state.gameOver = true;
+        state.score += 2000;
+        renderUI();
+        openEndModal(true, "Victoire totale de l'escouade ! Les 5 membres ont réussi tous les Jours Lunaires sans aucune erreur.");
+        await syncToCloud();
+        return;
+      }
+
+      state.sol++;
+      state.secondsLeft = 75;
+      ROLES.forEach(r => {
+        state.crew[r].done = false;
+        state.crew[r].attempts = 3;
+      });
+      state.radioText = `☀️ Jour Lunaire ${state.sol} ! Nouveaux calculs niveau Lycée attribués (3 tentatives chacun).`;
+
+      showCinematicBanner(`JOUR LUNAIRE ${state.sol} / ${state.maxSols}`, 'SYNCHRONISATION ESCUADE RÉUSSIE');
+      buildPuzzleForRole();
+      renderUI();
+      await syncToCloud();
+    }
+
+    // --- RENDU VISUEL DU HUD ---
+    function renderUI() {
+      document.getElementById('hud-commander-name').textContent = state.commanderName || state.playerName;
+      document.getElementById('hud-my-name').textContent = state.playerName;
+      document.getElementById('hud-sol').textContent = state.sol;
+      document.getElementById('hud-max-sol').textContent = state.maxSols;
+      document.getElementById('hud-score').textContent = state.score.toLocaleString('fr-FR');
+      document.getElementById('hud-radio-text').textContent = state.radioText;
+
+      const myAtt = state.crew[state.myRole]?.attempts ?? 3;
+      const attEl = document.getElementById('hud-my-attempts');
+      if (attEl) {
+        const hearts = '❤️'.repeat(myAtt) + '🖤'.repeat(Math.max(0, 3 - myAtt));
+        attEl.textContent = `${hearts} (${myAtt}/3)`;
+      }
+
+      const mins = String(Math.floor(state.secondsLeft / 60)).padStart(2, '0');
+      const secs = String(state.secondsLeft % 60).padStart(2, '0');
+      const timerEl = document.getElementById('hud-timer');
+      timerEl.textContent = `${mins}:${secs}`;
+      timerEl.className = state.secondsLeft <= 15
+        ? 'font-display text-base sm:text-lg font-black text-rose-400 animate-pulse'
+        : 'font-display text-base sm:text-lg font-black text-emerald-400';
+
+      document.getElementById('val-energy').textContent = `${state.energy}%`;
+      document.getElementById('bar-energy').style.width = `${state.energy}%`;
+      document.getElementById('val-shield').textContent = `${state.shield}%`;
+      document.getElementById('bar-shield').style.width = `${state.shield}%`;
+      document.getElementById('val-life').textContent = `${state.life}%`;
+      document.getElementById('bar-life').style.width = `${state.life}%`;
+
+      let readyCount = 0;
+      const crewList = document.getElementById('crew-status-list');
+      crewList.innerHTML = ROLES.map(r => {
+        const c = state.crew[r];
+        if (c.done) readyCount++;
+        const meta = ROLE_META[r];
+        const isMe = r === state.myRole;
+        const att = c.attempts ?? 3;
+        return `
+          <div class="p-2.5 rounded-lg hud-subpanel flex items-center justify-between ${isMe ? 'border-sky-400/60 bg-sky-500/10' : ''}">
+            <div class="min-w-0">
+              <div class="text-[11px] font-mono font-bold ${meta.color}">${meta.icon} ${meta.label} • ${'❤️'.repeat(att)}</div>
+              <div class="text-xs text-slate-200 truncate">${c.name} ${isMe ? '(Vous)' : ''}</div>
+            </div>
+            <span class="px-2 py-0.5 rounded font-mono text-[10px] font-bold shrink-0 ${
+              c.done ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-400/30' : 'bg-amber-500/15 text-amber-300 border border-amber-400/25'
+            }">
+              ${c.done ? '✔ PRÊT' : '⏳ ACTIF'}
+            </span>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('hud-ready-count').textContent = readyCount;
+
+      // Classement Live dynamique
+      const teams = [
+        { name: `⭐ ${state.roomCode} (Vous)`, score: state.score, isMe: true },
+        { name: '🛰️ APOLLO-IX', score: 1400 + state.sol * 580, isMe: false },
+        { name: '🚀 ORION-04', score: 1250 + state.sol * 510, isMe: false },
+        { name: '🛸 NOVA-7', score: 1100 + state.sol * 460, isMe: false }
+      ].sort((a, b) => b.score - a.score);
+
+      const lbEl = document.getElementById('leaderboard-list');
+      lbEl.innerHTML = teams.map((t, i) => `
+        <div class="px-3 py-2 rounded-lg hud-subpanel flex items-center justify-between text-xs ${
+          t.isMe ? 'border-amber-400/60 bg-amber-500/10' : ''
+        }">
+          <span class="font-mono font-bold ${t.isMe ? 'text-amber-300' : 'text-slate-300'}">#${i + 1} ${t.name}</span>
+          <span class="font-display font-bold text-white">${t.score.toLocaleString('fr-FR')}</span>
+        </div>
+      `).join('');
+    }
+
+    function openEndModal(victory, description) {
+      const modal = document.getElementById('endgame-modal');
+      document.getElementById('end-icon').textContent = victory ? '🏆' : '💥';
+      document.getElementById('end-subtitle').textContent = victory ? 'MISSION ACCOMPLIE' : 'MISSION INTERROMPUE';
+      document.getElementById('end-subtitle').className = victory
+        ? 'text-xs font-mono uppercase tracking-[0.2em] text-emerald-400 font-bold'
+        : 'text-xs font-mono uppercase tracking-[0.2em] text-rose-400 font-bold';
+      document.getElementById('end-title').textContent = victory ? 'VICTOIRE DE L’ESCOUADE' : 'ÉCHEC COLLECTIF';
+      document.getElementById('end-desc').textContent = description;
+      document.getElementById('end-score').textContent = state.score.toLocaleString('fr-FR');
+      document.getElementById('end-sol').textContent = `Sol ${state.sol} / ${state.maxSols}`;
+
+      const btnRestart = document.getElementById('btn-restart-mission');
+      const hintRestart = document.getElementById('end-restart-hint');
+      if (btnRestart && hintRestart) {
+        if (isMeCommander()) {
+          btnRestart.disabled = false;
+          btnRestart.textContent = '🔄 Relancer la Mission (Commandant)';
+          btnRestart.className = 'game-btn w-full py-3.5 rounded-xl bg-gradient-to-r from-sky-500 to-emerald-400 text-slate-950 font-display font-black text-sm uppercase tracking-wider';
+          hintRestart.classList.add('hidden');
+        } else {
+          btnRestart.disabled = true;
+          btnRestart.textContent = `🔒 En attente du Commandant (${state.commanderName || 'Hôte'})`;
+          btnRestart.className = 'w-full py-3.5 rounded-xl bg-slate-900 border border-slate-700 text-slate-400 font-display font-bold text-xs sm:text-sm uppercase tracking-wider cursor-not-allowed';
+          hintRestart.textContent = `Seul le Commandant (${state.commanderName || 'Hôte'}) peut relancer la partie pour l'escouade.`;
+          hintRestart.classList.remove('hidden');
+        }
+      }
+
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function triggerShake() {
+      const grid = document.getElementById('game-main-grid');
+      if (!grid) return;
+      grid.classList.remove('shake-fx');
+      void grid.offsetWidth;
+      grid.classList.add('shake-fx');
+    }
+
+    function showCinematicBanner(title, sub) {
+      const toast = document.getElementById('cinematic-toast');
+      if (!toast) return;
+      document.getElementById('cinematic-title').textContent = title;
+      document.getElementById('cinematic-sub').textContent = sub;
+      toast.classList.remove('hidden', 'cinematic-banner');
+      void toast.offsetWidth;
+      toast.classList.add('cinematic-banner');
+    }
+
+    window.restartMission = async function() {
+      playSfx('click');
+      if (!isMeCommander()) return;
+
+      state.sol = 1;
+      state.secondsLeft = 75;
+      state.score = 1500;
+      state.energy = 75;
+      state.shield = 75;
+      state.life = 75;
+      state.gameOver = false;
+      state.failReason = '';
+      state.radioText = `🔄 Nouvelle tentative lancée par le Commandant ${state.playerName} !`;
+      ROLES.forEach(r => {
+        state.crew[r].done = false;
+        state.crew[r].attempts = 3;
+      });
+
+      const modal = document.getElementById('endgame-modal');
+      modal.classList.add('hidden');
+      modal.classList.remove('flex');
+      buildPuzzleForRole();
+      renderUI();
+      await syncToCloud();
+    };
+
+    // --- ANIMATIONS CANVAS : CHAMP D'ÉTOILES + BASE LUNAIRE INTERACTIVE ---
+    function initCanvasVisuals() {
+      const bgCanvas = document.getElementById('space-bg-canvas');
+      const bgCtx = bgCanvas.getContext('2d');
+      const baseCanvas = document.getElementById('moon-base-canvas');
+      const baseCtx = baseCanvas.getContext('2d');
+
+      let stars = [];
+      function resizeCanvases() {
+        bgCanvas.width = window.innerWidth;
+        bgCanvas.height = window.innerHeight;
+        stars = Array.from({ length: 130 }, () => ({
+          x: Math.random() * bgCanvas.width,
+          y: Math.random() * bgCanvas.height,
+          r: Math.random() * 1.7 + 0.3,
+          speed: Math.random() * 0.35 + 0.08,
+          alpha: Math.random() * 0.7 + 0.3
+        }));
+
+        if (baseCanvas.parentElement) {
+          baseCanvas.width = baseCanvas.parentElement.clientWidth - 24;
+          baseCanvas.height = 165;
+        }
+      }
+      window.addEventListener('resize', resizeCanvases);
+      resizeCanvases();
+
+      let tick = 0;
+      function animate() {
+        tick += 0.02;
+
+        // 1. Fond spatial profond + étoiles mouvantes
+        bgCtx.fillStyle = '#030712';
+        bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+        const neb = bgCtx.createRadialGradient(
+          bgCanvas.width * 0.75, bgCanvas.height * 0.25, 20,
+          bgCanvas.width * 0.75, bgCanvas.height * 0.25, bgCanvas.width * 0.55
+        );
+        neb.addColorStop(0, 'rgba(14, 116, 144, 0.16)');
+        neb.addColorStop(1, 'rgba(3, 7, 18, 0)');
+        bgCtx.fillStyle = neb;
+        bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+
+        stars.forEach(s => {
+          s.y += s.speed;
+          if (s.y > bgCanvas.height) { s.y = 0; s.x = Math.random() * bgCanvas.width; }
+          bgCtx.fillStyle = `rgba(226, 232, 240, ${s.alpha})`;
+          bgCtx.beginPath();
+          bgCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          bgCtx.fill();
+        });
+
+        // 2. Scène Base Lunaire Artemis en temps réel
+        const w = baseCanvas.width;
+        const h = baseCanvas.height;
+        baseCtx.clearRect(0, 0, w, h);
+
+        // Ciel étoilé base
+        const skyGrad = baseCtx.createLinearGradient(0, 0, 0, h);
+        skyGrad.addColorStop(0, '#020617');
+        skyGrad.addColorStop(1, '#0f172a');
+        baseCtx.fillStyle = skyGrad;
+        baseCtx.fillRect(0, 0, w, h);
+
+        // Terre bleue en orbite
+        const earthX = w * 0.82;
+        const earthY = h * 0.28;
+        const earthGrad = baseCtx.createRadialGradient(earthX - 6, earthY - 6, 4, earthX, earthY, 22);
+        earthGrad.addColorStop(0, '#7dd3fc');
+        earthGrad.addColorStop(0.6, '#0284c7');
+        earthGrad.addColorStop(1, '#1e3a8a');
+        baseCtx.fillStyle = earthGrad;
+        baseCtx.beginPath();
+        baseCtx.arc(earthX, earthY, 22, 0, Math.PI * 2);
+        baseCtx.fill();
+
+        // Sol lunaire cratérisé
+        baseCtx.fillStyle = '#1e293b';
+        baseCtx.beginPath();
+        baseCtx.moveTo(0, h);
+        baseCtx.lineTo(0, h * 0.74);
+        baseCtx.quadraticCurveTo(w * 0.5, h * 0.64, w, h * 0.76);
+        baseCtx.lineTo(w, h);
+        baseCtx.closePath();
+        baseCtx.fill();
+
+        // Dôme principal de la base + Halo Bouclier énergétique
+        const domeX = w * 0.45;
+        const domeY = h * 0.72;
+        const shieldPulse = 54 + Math.sin(tick * 2) * 3;
+        baseCtx.strokeStyle = state.gameOver ? 'rgba(244, 63, 94, 0.6)' : 'rgba(56, 189, 248, 0.45)';
+        baseCtx.lineWidth = 2;
+        baseCtx.beginPath();
+        baseCtx.arc(domeX, domeY, shieldPulse, Math.PI, 0);
+        baseCtx.stroke();
+
+        // Dôme vitré
+        const domeGrad = baseCtx.createLinearGradient(domeX, domeY - 38, domeX, domeY);
+        domeGrad.addColorStop(0, 'rgba(56, 189, 248, 0.55)');
+        domeGrad.addColorStop(1, 'rgba(15, 23, 42, 0.95)');
+        baseCtx.fillStyle = domeGrad;
+        baseCtx.beginPath();
+        baseCtx.arc(domeX, domeY, 36, Math.PI, 0);
+        baseCtx.fill();
+
+        // Panneaux solaires à gauche
+        baseCtx.fillStyle = '#0ea5e9';
+        baseCtx.fillRect(domeX - 95, domeY - 18, 42, 12);
+        baseCtx.strokeStyle = '#bae6fd';
+        baseCtx.strokeRect(domeX - 95, domeY - 18, 42, 12);
+
+        // Antenne radar rotative à droite
+        const antX = domeX + 75;
+        baseCtx.strokeStyle = '#94a3b8';
+        baseCtx.lineWidth = 2;
+        baseCtx.beginPath();
+        baseCtx.moveTo(antX, domeY);
+        baseCtx.lineTo(antX, domeY - 28);
+        baseCtx.stroke();
+
+        // Onde radio pulsante
+        const waveR = (tick * 18) % 28;
+        baseCtx.strokeStyle = `rgba(16, 185, 129, ${1 - waveR / 28})`;
+        baseCtx.beginPath();
+        baseCtx.arc(antX, domeY - 28, waveR, -Math.PI * 0.8, -Math.PI * 0.2);
+        baseCtx.stroke();
+
+        requestAnimationFrame(animate);
+      }
+      animate();
+    }
+    window.addEventListener('load', initCanvasVisuals);
+  </script>
+</body>
+</html>
